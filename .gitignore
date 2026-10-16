@@ -2,3 +2,5 @@
 __pycache__/
 examples/*
 !examples/README.md
+run.bat
+log.txt

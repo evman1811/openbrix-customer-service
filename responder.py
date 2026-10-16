@@ -22,7 +22,7 @@ from pathlib import Path
 import anthropic
 
 ROOT = Path(__file__).parent
-MODEL = os.environ.get("CS_MODEL", "claude-opus-5-5")
+MODEL = os.environ.get("CS_MODEL", "claude-sonnet-5-5")
 DRAFTED = "$AIDrafted"  # IMAP keyword so an email is only drafted once
 
 SCHEMA = {

@@ -45,9 +45,26 @@ set IMAP_PASSWORD=<app password>
 set IMAP_DRAFTS=[Gmail]/Drafts        (Outlook: Drafts)
 ```
 Try one email without touching the inbox: `python responder.py some-email.eml`
-Run for real: `python responder.py`. Schedule it every 15 minutes with Task Scheduler, cron, or a GitHub Action.
+Run for real: `python responder.py`.
 
-Optional: `CS_MODEL=claude-sonnet-5-5` or `claude-haiku-5-5` to cut cost (see below).
+### Running it every 15 minutes (Windows)
+Task Scheduler doesn't see variables set with `set` in a terminal, so put them in a `run.bat` next to `responder.py`
+(it's git-ignored because it holds secrets):
+```
+@echo off
+set ANTHROPIC_API_KEY=sk-ant-...
+set GRAPH_TENANT_ID=...
+set GRAPH_CLIENT_ID=...
+set GRAPH_CLIENT_SECRET=...
+set GRAPH_MAILBOX=support@yourdomain
+cd /d %~dp0
+python responder.py >> log.txt 2>&1
+```
+Task Scheduler → Create Basic Task → Daily → action *Start a program* = `run.bat`. Then open the task's
+Triggers tab → Edit → *Repeat task every 15 minutes* for *Indefinitely*. Also tick *Run whether user is logged on or not*.
+Use a machine that stays on.
+
+Model: Claude Sonnet 5.5 by default. Set `CS_MODEL=claude-opus-5-5` for harder emails, or `claude-haiku-5-5` for the cheapest option.
 
 ## Cost at 10 emails a day
 Assumes about 11k input tokens per email (instructions + knowledge base + 25 example replies),
@@ -55,11 +72,11 @@ plus about 600 output tokens. The fixed part is prompt-cached, which helps when 
 
 | Model | Per email | Per month (300 emails) |
 |---|---|---|
-| Claude Opus 5.5 (default) | 3-7p | about $10-21 |
-| Claude Sonnet 5.5 | 1.5-3.5p | about $5-11 |
-| Claude Haiku 5.5 | under 0.5p | about $1 |
+| Claude Opus 5.5 | $0.03-0.07 | about $10-21 |
+| Claude Sonnet 5.5 (default) | $0.015-0.035 | about $5-11 |
+| Claude Haiku 5.5 | under $0.005 | about $1 |
 
-Start on Opus, check the draft quality, then try Sonnet on the same emails.
+To compare, run the same 10-15 past emails through Sonnet and Opus and have the support team judge the drafts blind.
 A Claude Team or Pro subscription doesn't cover this; it needs a Claude API key (console.anthropic.com) billed per use.
 
 ## Safety
