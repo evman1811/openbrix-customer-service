@@ -1,7 +1,7 @@
 # OpenBrix customer service
 
 Drafts replies to tlyfe customer service emails with Claude. It **never sends**: it reads new
-emails over IMAP, writes a reply into the Drafts folder, and a person checks and sends it.
+emails (Outlook / Microsoft 365, or any IMAP mailbox), writes a reply into the Drafts folder, and a person checks and sends it.
 Risky emails (complaints, deposit disputes, legal, data requests) get a `[NEEDS HUMAN: why]` line at the top.
 
 ## Files
@@ -14,6 +14,31 @@ Risky emails (complaints, deposit disputes, legal, data requests) get a `[NEEDS 
 ```
 pip install -r requirements.txt
 set ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Outlook / Microsoft 365 (main route)
+Microsoft has switched off password logins over IMAP, so this uses the Microsoft Graph API.
+Someone with Microsoft 365 admin rights does this once (about 10 minutes):
+
+1. Azure portal → **App registrations** → New registration → name it `tlyfe-cs-drafts`.
+2. **API permissions** → Add → Microsoft Graph → *Application permissions* → `Mail.ReadWrite` → **Grant admin consent**.
+3. **Certificates & secrets** → New client secret → copy the value.
+4. **Restrict it to the support mailbox only.** Without this the app can read every mailbox in the company.
+   In Exchange Online PowerShell:
+   `New-ApplicationAccessPolicy -AppId <client id> -PolicyScopeGroupId support@yourdomain -AccessRight RestrictAccess -Description "CS bot"`
+
+```
+set GRAPH_TENANT_ID=<directory (tenant) id>
+set GRAPH_CLIENT_ID=<application (client) id>
+set GRAPH_CLIENT_SECRET=<secret value>
+set GRAPH_MAILBOX=support@yourdomain
+```
+Drafts land in the mailbox's **Drafts** folder as threaded replies. Each email it handles gets the
+Outlook category **AI Drafted** and stays unread.
+
+### Any other mailbox (Gmail etc.) over IMAP
+Used when `GRAPH_TENANT_ID` isn't set.
+```
 set IMAP_HOST=imap.gmail.com
 set IMAP_USER=support@yourdomain
 set IMAP_PASSWORD=<app password>

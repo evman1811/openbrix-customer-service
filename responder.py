@@ -1,9 +1,10 @@
 """Draft replies to tlyfe / OpenBrix customer service emails with Claude.
 
-Reads unanswered emails over IMAP, writes a draft reply into the Drafts folder,
-and never sends anything. A human reviews and sends every reply.
+Reads unanswered emails (Outlook via Microsoft Graph, or any IMAP mailbox), writes a
+draft reply into the Drafts folder, and never sends anything. A human reviews and sends every reply.
 
     python responder.py              # process new emails once (run on a schedule)
+                                     # uses Graph if GRAPH_TENANT_ID is set, else IMAP
     python responder.py email.eml    # print a draft for one saved email (no IMAP)
 """
 import email
@@ -12,6 +13,8 @@ import json
 import os
 import sys
 import time
+import urllib.parse
+import urllib.request
 from email.message import EmailMessage
 from email.policy import default
 from pathlib import Path
@@ -117,9 +120,51 @@ def run_imap():
             print(f"{result['category']:<22} human={result['needs_human']!s:<5} {msg['Subject']} {result['usage']}")
 
 
+# --- Outlook / Microsoft 365 (Graph API). Exchange Online has no password IMAP any more.
+GRAPH = "https://graph.microsoft.com/v1.0"
+CATEGORY = "AI Drafted"  # Outlook category so an email is only drafted once
+
+
+def graph_token():
+    form = urllib.parse.urlencode({
+        "client_id": os.environ["GRAPH_CLIENT_ID"], "client_secret": os.environ["GRAPH_CLIENT_SECRET"],
+        "scope": "https://graph.microsoft.com/.default", "grant_type": "client_credentials"}).encode()
+    url = f"https://login.microsoftonline.com/{os.environ['GRAPH_TENANT_ID']}/oauth2/v2.0/token"
+    with urllib.request.urlopen(url, form) as r:
+        return json.load(r)["access_token"]
+
+
+def graph(token, method, path, body=None):
+    req = urllib.request.Request(GRAPH + path, method=method, data=json.dumps(body).encode() if body else None,
+                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                                          "Prefer": 'outlook.body-content-type="text"'})
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def run_graph(client, call=graph):
+    token = graph_token() if call is graph else ""
+    box = f"/users/{os.environ['GRAPH_MAILBOX']}"
+    # ponytail: first 50 unread per run; page with @odata.nextLink if a backlog ever builds up
+    msgs = call(token, "GET", f"{box}/mailFolders/inbox/messages?$filter=isRead%20eq%20false&$top=50"
+                              "&$select=id,subject,from,body,categories")["value"]
+    for m in msgs:
+        if CATEGORY in m["categories"]:
+            continue
+        sender = m["from"]["emailAddress"]["address"]
+        result = draft_reply(client, sender, m["subject"], m["body"]["content"])
+        note = f"[NEEDS HUMAN: {result['reason']}]\n\n" if result["needs_human"] else ""
+        # createReply puts a threaded draft in Drafts; the email itself stays unread
+        call(token, "POST", f"{box}/messages/{m['id']}/createReply", {"comment": note + result["reply"]})
+        call(token, "PATCH", f"{box}/messages/{m['id']}", {"categories": m["categories"] + [CATEGORY]})
+        print(f"{result['category']:<22} human={result['needs_human']!s:<5} {m['subject']} {result['usage']}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         msg = email.message_from_bytes(Path(sys.argv[1]).read_bytes(), policy=default)
         print(json.dumps(draft_reply(anthropic.Anthropic(), msg["From"], msg["Subject"], body_text(msg)), indent=2))
+    elif os.environ.get("GRAPH_TENANT_ID"):
+        run_graph(anthropic.Anthropic())
     else:
         run_imap()
